@@ -23,6 +23,8 @@ pattern_since = r'@since\s+(?P<date>[0-9\-/]+)'
 re_since = re.compile(pattern_since, re.I)
 pattern_class = r'(?P<scope>public|private|protected)\s+((abstract|interface)\s+)?(with\s+sharing\s+)?(class\s+)?(?P<name>[a-zA-Z]+)'
 re_class = re.compile(pattern_class, re.I)
+pattern_property = r'(?P<scope>public|private|protected)\s+(?P<paramtype>[a-zA-Z\<\>,_\s]+)\s+(?P<name>[a-zA-Z]+)\s*{'
+re_property = re.compile(pattern_property, re.MULTILINE | re.DOTALL | re.I)
 
 def __readFile(file):
 	with open(file) as f:
@@ -113,17 +115,7 @@ def __parse_method_header(header, is_interface=False):
 			print('\t\t' + p.name + '(' + p.param_type + ')')
 	return minfo
 
-def parse_file(file):
-	content = __readFile(file)
-	result = re_header.findall(content)
-	cinfo = methodinfo.ClassInfo()
-	if len(result) > 0:
-		cinfo = __parse_class_header(result[0])
-	methods = []
-	if len(result) > 1:
-		methods = [__parse_method_header(r, cinfo.is_interface) for r in result[1:]]
-
-	# Hack for methods w/o headers (probably need to rethink this entire module)
+def __parse_all_methods(content, cinfo, methods):
 	allmethods = []
 	if cinfo.is_interface:
 		allmethods = re_interface_method.findall(content)
@@ -143,6 +135,33 @@ def parse_file(file):
 				meth.return_type = m[5]
 				meth.params = __parse_params(m[7])
 				methods.append(meth)
+
+def __parse_properties(content):
+	props = []
+	properties = re_property.findall(content)
+	for p in properties:
+		if all(x not in p[1].lower() for x in [sfconstants.CLASS, sfconstants.INTERFACE]):
+			prop = methodinfo.Property()
+			prop.scope = p[0]
+			prop.property_type = p[1]
+			prop.name = p[2]
+			props.append(prop)
+	return props
+
+def parse_file(file):
+	content = __readFile(file)
+	result = re_header.findall(content)
+	cinfo = methodinfo.ClassInfo()
+	if len(result) > 0:
+		cinfo = __parse_class_header(result[0])
+	methods = []
+	if len(result) > 1:
+		methods = [__parse_method_header(r, cinfo.is_interface) for r in result[1:]]
+
+	# Hack for methods w/o headers (probably need to rethink this entire module)
+	__parse_all_methods(content, cinfo, methods)
+
+	cinfo.properties = __parse_properties(content)
 
 	cinfo.methods = methods
 	return cinfo
